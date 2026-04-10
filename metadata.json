@@ -1,0 +1,5 @@
+{
+  "name": "Rei dos Estojos OS System",
+  "description": "Modern Service Order (OS) management interface with RD Station integration and camera support.",
+  "requestFramePermissions": ["camera"]
+}
