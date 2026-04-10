@@ -20,7 +20,7 @@ services:
     image: postgrest/postgrest:v12.2.12
     restart: unless-stopped
     environment:
-      PGRST_DB_URI: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PGRST_DB_URI: postgres://authenticator:Th%4075043727.@postgres:5432/postgres
       PGRST_DB_SCHEMAS: ${PGRST_SCHEMAS}
       PGRST_DB_ANON_ROLE: ${PGRST_ANON_ROLE}
       PGRST_JWT_SECRET: ${JWT_SECRET}
