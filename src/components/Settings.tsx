@@ -548,11 +548,16 @@ function WorkflowSettings({ data, setSettings }: {
   );
 }
 
-function SecuritySettings({ data, setSettings, setConfirmDelete }: { 
+
+import { getUsers, createUser, deleteUser, UserRow } from '../lib/userApi';
+
+function SecuritySettings({ }: { 
   data: SettingsData['security'],
   setSettings: React.Dispatch<React.SetStateAction<SettingsData>>,
   setConfirmDelete: React.Dispatch<React.SetStateAction<{ show: boolean; title: string; onConfirm: () => void; }>>
 }) {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
@@ -561,39 +566,53 @@ function SecuritySettings({ data, setSettings, setConfirmDelete }: {
   });
   const [showAddForm, setShowAddForm] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ show: boolean; id?: number; name?: string }>({ show: false });
+  const [error, setError] = useState<string | null>(null);
 
-  const addUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newUser.name && newUser.email && newUser.password) {
-      setSettings(prev => ({
-        ...prev,
-        security: {
-          ...prev.security,
-          users: [
-            ...prev.security.users,
-            { ...newUser, lastAccess: 'Nunca' }
-          ]
-        }
-      }));
-      setNewUser({ name: '', email: '', level: 'Operador', password: '' });
-      setShowAddForm(false);
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await getUsers();
+      setUsers(data);
+    } catch (err: any) {
+      setError('Erro ao carregar usuários');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const removeUser = (name: string) => {
-    setConfirmDelete({
-      show: true,
-      title: `o usuário ${name}`,
-      onConfirm: () => {
-        setSettings(prev => ({
-          ...prev,
-          security: {
-            ...prev.security,
-            users: prev.security.users.filter(u => u.name !== name)
-          }
-        }));
-      }
-    });
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUser.name || !newUser.email || !newUser.password) return;
+    try {
+      const created = await createUser(newUser);
+      setUsers((prev) => [...prev, created]);
+      setNewUser({ name: '', email: '', level: 'Operador', password: '' });
+      setShowAddForm(false);
+      setError(null);
+    } catch (err: any) {
+      setError('Erro ao criar usuário');
+    }
+  };
+
+  const handleRemoveUser = (id: number, name: string) => {
+    setConfirmDelete({ show: true, id, name });
+  };
+
+  const confirmRemoveUser = async () => {
+    if (!confirmDelete.id) return;
+    try {
+      await deleteUser(confirmDelete.id);
+      setUsers((prev) => prev.filter((u) => u.id !== confirmDelete.id));
+      setConfirmDelete({ show: false });
+      setError(null);
+    } catch (err: any) {
+      setError('Erro ao remover usuário');
+    }
   };
 
   return (
@@ -621,7 +640,7 @@ function SecuritySettings({ data, setSettings, setConfirmDelete }: {
             className="overflow-hidden"
           >
             <SettingCard title="Cadastrar Novo Usuário">
-              <form onSubmit={addUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Nome</label>
                   <input 
@@ -688,6 +707,7 @@ function SecuritySettings({ data, setSettings, setConfirmDelete }: {
                   </button>
                 </div>
               </form>
+              {error && <div className="text-error text-xs mt-2">{error}</div>}
             </SettingCard>
           </motion.div>
         )}
@@ -696,46 +716,93 @@ function SecuritySettings({ data, setSettings, setConfirmDelete }: {
       <div className="grid grid-cols-1 gap-8">
         <SettingCard title="Usuários do Sistema">
           <div className="overflow-hidden border border-border-soft rounded-2xl">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-bg-deep text-[10px] font-black uppercase tracking-widest text-gray-500">
-                <tr>
-                  <th className="px-6 py-4">Usuário</th>
-                  <th className="px-6 py-4">E-mail</th>
-                  <th className="px-6 py-4">Nível</th>
-                  <th className="px-6 py-4">Último Acesso</th>
-                  <th className="px-6 py-4 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {data.users.map((row) => (
-                  <tr key={row.name} className="hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-4 font-bold">{row.name}</td>
-                    <td className="px-6 py-4 text-gray-500">{row.email}</td>
-                    <td className="px-6 py-4">
-                      <span className={cn(
-                        "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
-                        row.level === 'Admin' ? "bg-brand/10 text-brand" : "bg-white/10 text-gray-400"
-                      )}>
-                        {row.level}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500 font-medium">{row.lastAccess}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => removeUser(row.name)}
-                        className="text-gray-600 hover:text-error transition-colors p-2"
-                        title="Remover Usuário"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
+            {loading ? (
+              <div className="p-6 text-center text-gray-500">Carregando usuários...</div>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead className="bg-bg-deep text-[10px] font-black uppercase tracking-widest text-gray-500">
+                  <tr>
+                    <th className="px-6 py-4">Usuário</th>
+                    <th className="px-6 py-4">E-mail</th>
+                    <th className="px-6 py-4">Nível</th>
+                    <th className="px-6 py-4">Último Acesso</th>
+                    <th className="px-6 py-4 text-right">Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {users.map((row) => (
+                    <tr key={row.id} className="hover:bg-white/5 transition-colors">
+                      <td className="px-6 py-4 font-bold">{row.name}</td>
+                      <td className="px-6 py-4 text-gray-500">{row.email}</td>
+                      <td className="px-6 py-4">
+                        <span className={cn(
+                          "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
+                          row.level === 'Admin' ? "bg-brand/10 text-brand" : "bg-white/10 text-gray-400"
+                        )}>
+                          {row.level}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 font-medium">{row.lastAccess || '-'}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => handleRemoveUser(row.id!, row.name)}
+                          className="text-gray-600 hover:text-error transition-colors p-2"
+                          title="Remover Usuário"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {error && <div className="text-error text-xs p-2 text-center">{error}</div>}
           </div>
         </SettingCard>
       </div>
+
+      <AnimatePresence>
+        {confirmDelete.show && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDelete({ show: false })}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-bg-card border border-border-soft w-full max-w-sm rounded-[32px] p-8 relative z-10 shadow-2xl text-center"
+            >
+              <div className="w-16 h-16 bg-error/10 text-error rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-black mb-2">Confirmar Exclusão</h3>
+              <p className="text-gray-500 font-medium mb-8">
+                Tem certeza que deseja remover <span className="text-white font-bold">{confirmDelete.name}</span>? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setConfirmDelete({ show: false })}
+                  className="flex-1 py-3 bg-white/5 border border-white/10 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmRemoveUser}
+                  className="flex-1 py-3 bg-error text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-error/80 transition-all shadow-lg shadow-error/20"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

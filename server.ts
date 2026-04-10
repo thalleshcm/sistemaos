@@ -133,6 +133,46 @@ async function startServer() {
   });
 
   // ---------------------------------------------------------------------------
+  // User CRUD: /api/users
+  // ---------------------------------------------------------------------------
+  // GET /api/users — lista usuários
+  app.get('/api/users', async (_req, res) => {
+    try {
+      const result = await pool.query('SELECT id, name, email, level, to_char(last_access, \'DD/MM/YYYY HH24:MI\') as lastAccess FROM users ORDER BY name');
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // POST /api/users — cria usuário com senha hasheada
+  app.post('/api/users', async (req, res) => {
+    const { name, email, password, level } = req.body;
+    try {
+      const result = await pool.query(
+        `INSERT INTO users (name, email, password_hash, level)
+         VALUES ($1, $2, crypt($3, gen_salt('bf')), $4)
+         RETURNING id, name, email, level, to_char(last_access, 'DD/MM/YYYY HH24:MI') as lastAccess`,
+        [name, email, password, level]
+      );
+      res.json(result.rows[0]);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/users/:id — apaga usuário
+  app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query('DELETE FROM users WHERE id = $1', [id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // Frontend
   // ---------------------------------------------------------------------------
   if (process.env.NODE_ENV !== "production") {
