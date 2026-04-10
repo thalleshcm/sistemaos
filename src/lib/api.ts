@@ -29,11 +29,14 @@ function toISODate(dateStr?: string): string | undefined {
   return dateStr || undefined; // already ISO or unknown format — pass through
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
+async function handleResponse<T>(res: Response, label?: string): Promise<T> {
+  const tag = label ? `[api:${label}]` : '[api]';
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText);
+    console.error(`${tag} ${res.status} ${res.url}`, body);
     throw new Error(`API ${res.status}: ${body}`);
   }
+  console.debug(`${tag} ${res.status} ${res.url}`);
   // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
   return res.json() as Promise<T>;
@@ -181,6 +184,7 @@ export async function upsertCustomer(customer: CustomerRow): Promise<CustomerRow
   if (customer.id && customer.id > 0) {
     // Customer already exists — PATCH to update
     const { id, ...patch } = customer;
+    console.debug(`[api:upsertCustomer] PATCH id=${id}`, patch);
     const res = await fetch(`${BASE_URL}/customers?id=eq.${id}`, {
       method: 'PATCH',
       headers: {
@@ -189,11 +193,12 @@ export async function upsertCustomer(customer: CustomerRow): Promise<CustomerRow
       },
       body: JSON.stringify(patch),
     });
-    const rows = await handleResponse<CustomerRow[]>(res);
+    const rows = await handleResponse<CustomerRow[]>(res, 'upsertCustomer');
     return rows[0] ?? { ...patch, id };
   }
 
   // New customer — INSERT
+  console.debug('[api:upsertCustomer] POST new customer', customer.name);
   const res = await fetch(`${BASE_URL}/customers`, {
     method: 'POST',
     headers: {
@@ -202,7 +207,7 @@ export async function upsertCustomer(customer: CustomerRow): Promise<CustomerRow
     },
     body: JSON.stringify(customer),
   });
-  const rows = await handleResponse<CustomerRow[]>(res);
+  const rows = await handleResponse<CustomerRow[]>(res, 'upsertCustomer');
   return rows[0];
 }
 
@@ -240,15 +245,18 @@ export async function getServiceOrderByNumber(osNumber: number): Promise<OSData 
 }
 
 export async function upsertServiceOrder(row: ServiceOrderRow): Promise<ServiceOrderRow> {
+  // balance_value is a GENERATED ALWAYS column — must not be sent
+  const { balance_value: _bv, ...payload } = row;
+  console.debug('[api:upsertServiceOrder] POST os_number=', payload.os_number, 'customer_id=', payload.customer_id);
   const res = await fetch(`${BASE_URL}/service_orders`, {
     method: 'POST',
     headers: {
       ...getHeaders() as Record<string, string>,
       Prefer: 'return=representation,resolution=merge-duplicates',
     },
-    body: JSON.stringify(row),
+    body: JSON.stringify(payload),
   });
-  const rows = await handleResponse<ServiceOrderRow[]>(res);
+  const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder');
   return rows[0];
 }
 
@@ -272,12 +280,12 @@ export async function updateServiceOrderCustomer(osNumber: number, customerPatch
 
 export async function getTechnicians(): Promise<{ id: number; name: string }[]> {
   const res = await fetch(`${BASE_URL}/technicians?active=eq.true&select=id,name`, { headers: getHeaders() });
-  return handleResponse(res);
+  return handleResponse(res, 'getTechnicians');
 }
 
 export async function getSellers(): Promise<{ id: number; name: string }[]> {
   const res = await fetch(`${BASE_URL}/sellers?active=eq.true&select=id,name`, { headers: getHeaders() });
-  return handleResponse(res);
+  return handleResponse(res, 'getSellers');
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +299,7 @@ export async function getSettings(): Promise<Partial<SettingsData>> {
 }
 
 export async function upsertSetting(key: string, value: unknown): Promise<void> {
+  console.debug(`[api:upsertSetting] key=${key}`);
   const res = await fetch(`${BASE_URL}/system_settings`, {
     method: 'POST',
     headers: {
@@ -299,7 +308,7 @@ export async function upsertSetting(key: string, value: unknown): Promise<void> 
     },
     body: JSON.stringify({ key, value }),
   });
-  return handleResponse<void>(res);
+  return handleResponse<void>(res, 'upsertSetting');
 }
 
 // ---------------------------------------------------------------------------

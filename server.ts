@@ -67,6 +67,18 @@ async function startServer() {
   });
 
   // ---------------------------------------------------------------------------
+  // Health check: GET /api/health
+  // ---------------------------------------------------------------------------
+  app.get("/api/health", async (_req, res) => {
+    try {
+      await pool.query("SELECT 1");
+      res.json({ ok: true, db: "connected" });
+    } catch (err) {
+      res.status(500).json({ ok: false, db: "error", error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // DB Test: GET /api/test-db
   // ---------------------------------------------------------------------------
   app.get("/api/test-db", async (_req, res) => {
@@ -79,35 +91,28 @@ async function startServer() {
   });
 
   // ---------------------------------------------------------------------------
-  // Webhook Proxy: POST /api/webhook-proxy
+  // Webhook Proxy: POST /api/webhook-proxy — fire-and-forget, always 202
   // ---------------------------------------------------------------------------
-  app.post("/api/webhook-proxy", async (req, res) => {
+  app.post("/api/webhook-proxy", (req, res) => {
     const { url, data } = req.body as { url?: string; data?: unknown };
 
     if (!url) {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    try {
-      console.log(`Proxying webhook to: ${url}`);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "OS-System-Proxy/1.0",
-        },
-        body: JSON.stringify(data),
-      });
+    // Respond immediately — webhook delivery is best-effort
+    res.status(202).json({ queued: true });
 
-      const responseText = await response.text();
-      res.status(response.status).send(responseText);
-    } catch (error) {
-      console.error("Webhook Proxy Error:", error);
-      res.status(500).json({
-        error: "Failed to fetch webhook",
-        details: error instanceof Error ? error.message : String(error),
-      });
-    }
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "OS-System-Proxy/1.0",
+      },
+      body: JSON.stringify(data),
+    })
+      .then((r) => console.log(`[webhook] ${url} → ${r.status}`))
+      .catch((err) => console.error("[webhook] failed silently:", err));
   });
 
   // ---------------------------------------------------------------------------

@@ -278,7 +278,7 @@ export default function OSForm() {
       if (isUpdate) osList[existingIndex] = updatedData; else osList.unshift(updatedData);
       localStorage.setItem('os_list', JSON.stringify(osList));
 
-      // 4. Webhook
+      // 4. Webhook — fire-and-forget, never blocks or propagates errors
       if (settings.webhooks.enabled && settings.webhooks.url) {
         const shouldTrigger = (isUpdate && settings.webhooks.on_update) || (!isUpdate && settings.webhooks.on_create);
         if (shouldTrigger) {
@@ -289,9 +289,13 @@ export default function OSForm() {
               url: settings.webhooks.url,
               data: { event: isUpdate ? 'os.updated' : 'os.created', timestamp: new Date().toISOString(), data: updatedData },
             }),
-          }).catch(err => console.error('Webhook error:', err));
+          }).catch(err => console.error('Webhook failed silently:', err));
         }
       }
+
+      setData(updatedData);
+      localStorage.setItem('current_os', JSON.stringify(updatedData));
+      setShowSuccessModal(true);
     } catch (err) {
       console.error('Erro ao salvar OS no banco:', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -299,9 +303,6 @@ export default function OSForm() {
     }
 
     setIsSyncing(false);
-    setData(updatedData);
-    localStorage.setItem('current_os', JSON.stringify(updatedData));
-    setShowSuccessModal(true);
   };
 
   const handleWhatsAppShare = () => {
