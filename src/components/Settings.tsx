@@ -30,6 +30,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { SettingsData, initialSettingsData } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { getSettings, upsertSetting } from '../lib/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -58,31 +59,51 @@ export default function SettingsPage() {
       navigate('/');
       return;
     }
-    const saved = localStorage.getItem('app_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSettings({
-        ...initialSettingsData,
-        ...parsed,
-        company: { ...initialSettingsData.company, ...parsed.company },
-        team: { ...initialSettingsData.team, ...parsed.team },
-        workflow: { ...initialSettingsData.workflow, ...parsed.workflow },
-        security: { ...initialSettingsData.security, ...parsed.security },
-        webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks },
-        fields: initialSettingsData.fields.map(initialField => {
-          const savedField = parsed.fields?.find((f: any) => f.id === initialField.id);
-          return savedField ? { ...initialField, ...savedField } : initialField;
-        })
-      });
-    }
+    getSettings().then(remote => {
+      setSettings(prev => ({
+        ...prev,
+        company: { ...initialSettingsData.company, ...(remote.company as any) },
+        workflow: { ...initialSettingsData.workflow, ...(remote.workflow as any) },
+        webhooks: { ...initialSettingsData.webhooks, ...(remote.webhooks as any) },
+      }));
+      localStorage.setItem('app_settings', JSON.stringify(remote));
+    }).catch(() => {
+      const saved = localStorage.getItem('app_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSettings({
+          ...initialSettingsData,
+          ...parsed,
+          company: { ...initialSettingsData.company, ...parsed.company },
+          team: { ...initialSettingsData.team, ...parsed.team },
+          workflow: { ...initialSettingsData.workflow, ...parsed.workflow },
+          security: { ...initialSettingsData.security, ...parsed.security },
+          webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks },
+          fields: initialSettingsData.fields.map(initialField => {
+            const savedField = parsed.fields?.find((f: any) => f.id === initialField.id);
+            return savedField ? { ...initialField, ...savedField } : initialField;
+          }),
+        });
+      }
+    });
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsSaving(true);
-    localStorage.setItem('app_settings', JSON.stringify(settings));
-    setTimeout(() => {
+    try {
+      await Promise.all([
+        upsertSetting('company', settings.company),
+        upsertSetting('workflow', settings.workflow),
+        upsertSetting('webhooks', settings.webhooks),
+      ]);
+      localStorage.setItem('app_settings', JSON.stringify(settings));
+    } catch (err) {
+      console.error('Erro ao salvar configurações:', err);
+      // Fallback: save locally
+      localStorage.setItem('app_settings', JSON.stringify(settings));
+    } finally {
       setIsSaving(false);
-    }, 800);
+    }
   };
 
   const updateCompany = (field: keyof SettingsData['company'], value: string | null) => {

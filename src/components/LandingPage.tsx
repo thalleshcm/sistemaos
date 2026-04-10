@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SettingsData, initialSettingsData } from '../types';
+import { getSettings } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import LoginModal from './LoginModal';
 
@@ -24,15 +25,24 @@ export default function LandingPage() {
   const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('app_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSettings({
-        ...initialSettingsData,
-        ...parsed,
-        company: { ...initialSettingsData.company, ...parsed.company }
-      });
-    }
+    getSettings().then(remote => {
+      if (remote.company) {
+        setSettings(prev => ({
+          ...prev,
+          company: { ...initialSettingsData.company, ...(remote.company as any) },
+        }));
+      }
+    }).catch(() => {
+      const saved = localStorage.getItem('app_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSettings(prev => ({
+          ...prev,
+          ...parsed,
+          company: { ...initialSettingsData.company, ...parsed.company },
+        }));
+      }
+    });
   }, []);
 
   const menuItems = [

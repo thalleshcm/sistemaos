@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { SettingsData, initialSettingsData } from '../types';
+import { loginWithCredentials, storeUser } from '../lib/auth';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -18,37 +18,22 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Load settings to check users
-    const savedSettings = localStorage.getItem('app_settings');
-    const settings: SettingsData = savedSettings ? JSON.parse(savedSettings) : initialSettingsData;
-    
-    // Find user in saved settings
-    let user = settings.security.users.find(
-      u => (u.name.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) && u.password === password
-    );
-
-    // Fallback: If not found in localStorage (maybe it's outdated), check initialSettingsData
-    if (!user) {
-      user = initialSettingsData.security.users.find(
-        u => (u.name.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()) && u.password === password
-      );
-    }
-
-    setTimeout(() => {
-      if (user) {
-        login(user.name, user.level);
-        onSuccess();
-        onClose();
-      } else {
-        setError('Usuário ou senha incorretos.');
-      }
+    try {
+      const { user } = await loginWithCredentials(username, password);
+      storeUser(user);
+      login(user.name, user.level);
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Usuário ou senha incorretos.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   return (

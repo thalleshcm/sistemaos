@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OSData } from '../types';
+import { getServiceOrders } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -41,22 +42,20 @@ export default function OSSearch() {
       navigate('/');
       return;
     }
-    // In a real app, this would be an API call.
-    // Here we'll load from localStorage os_list
-    const saved = localStorage.getItem('os_list');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setAllOS(parsed);
-      setResults(parsed.slice(0, 30));
-    } else {
-      // Fallback to current_os if os_list doesn't exist yet
-      const current = localStorage.getItem('current_os');
-      if (current) {
-        const parsed = [JSON.parse(current)];
+    getServiceOrders(100).then(list => {
+      setAllOS(list);
+      setResults(list.slice(0, 30));
+      // keep local cache for offline/print
+      localStorage.setItem('os_list', JSON.stringify(list));
+    }).catch(() => {
+      // Fallback to local cache
+      const saved = localStorage.getItem('os_list');
+      if (saved) {
+        const parsed = JSON.parse(saved);
         setAllOS(parsed);
-        setResults(parsed);
+        setResults(parsed.slice(0, 30));
       }
-    }
+    });
   }, []);
 
   const handleSearch = (

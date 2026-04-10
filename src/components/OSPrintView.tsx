@@ -1,20 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { Printer, Download, Share2, ArrowLeft } from 'lucide-react';
 import { OSData, SettingsData, initialSettingsData } from '../types';
+import { getSettings } from '../lib/api';
 
 export default function OSPrintView() {
   const [data, setData] = useState<OSData | null>(null);
   const [settings, setSettings] = useState<SettingsData>(initialSettingsData);
 
   useEffect(() => {
+    // current_os is always set via localStorage before opening /print in a new tab
     const savedOS = localStorage.getItem('current_os');
-    if (savedOS) {
-      setData(JSON.parse(savedOS));
-    }
-    const savedSettings = localStorage.getItem('app_settings');
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
+    if (savedOS) setData(JSON.parse(savedOS));
+
+    getSettings().then(remote => {
+      if (remote.company) {
+        setSettings(prev => ({
+          ...prev,
+          company: { ...initialSettingsData.company, ...(remote.company as any) },
+        }));
+      }
+    }).catch(() => {
+      const savedSettings = localStorage.getItem('app_settings');
+      if (savedSettings) setSettings(JSON.parse(savedSettings));
+    });
   }, []);
 
   if (!data) return <div className="p-10 text-center">Carregando dados da OS...</div>;

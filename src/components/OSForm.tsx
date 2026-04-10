@@ -26,6 +26,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import Webcam from 'react-webcam';
 import { OSData, initialOSData, SettingsData, initialSettingsData } from '../types';
+import { getSettings, getTechnicians, getSellers, upsertCustomer, upsertServiceOrder, osDataToRow } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -60,21 +61,36 @@ export default function OSForm() {
       navigate('/');
       return;
     }
-    const saved = localStorage.getItem('app_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSettings({
-        ...initialSettingsData,
-        ...parsed,
-        company: { ...initialSettingsData.company, ...parsed.company },
-        team: { ...initialSettingsData.team, ...parsed.team },
-        webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks },
-        fields: initialSettingsData.fields.map(initialField => {
-          const savedField = parsed.fields?.find((f: any) => f.id === initialField.id);
-          return savedField ? { ...initialField, ...savedField } : initialField;
-        })
-      });
-    }
+
+    // Load settings from API (fallback to localStorage for offline support)
+    getSettings().then(remoteSettings => {
+      if (remoteSettings.company || remoteSettings.workflow) {
+        setSettings(prev => ({
+          ...prev,
+          ...remoteSettings,
+          company: { ...initialSettingsData.company, ...(remoteSettings.company as any) },
+          workflow: { ...initialSettingsData.workflow, ...(remoteSettings.workflow as any) },
+          webhooks: { ...initialSettingsData.webhooks, ...(remoteSettings.webhooks as any) },
+        }));
+        localStorage.setItem('app_settings', JSON.stringify({ ...remoteSettings }));
+      }
+    }).catch(() => {
+      const saved = localStorage.getItem('app_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSettings(prev => ({
+          ...prev,
+          ...parsed,
+          company: { ...initialSettingsData.company, ...parsed.company },
+          team: { ...initialSettingsData.team, ...parsed.team },
+          webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks },
+          fields: initialSettingsData.fields.map(initialField => {
+            const savedField = parsed.fields?.find((f: any) => f.id === initialField.id);
+            return savedField ? { ...initialField, ...savedField } : initialField;
+          }),
+        }));
+      }
+    });
 
     // Load current OS if editing
     const currentOS = localStorage.getItem('current_os');
@@ -82,14 +98,10 @@ export default function OSForm() {
       const parsedOS = JSON.parse(currentOS);
       setData(parsedOS);
     } else if (data.os_info.number === 0) {
-      // Generate OS number if it's a new OS (number is 0)
       const nextNumber = Math.floor(Math.random() * 90000) + 10000;
       setData(prev => ({
         ...prev,
-        os_info: {
-          ...prev.os_info,
-          number: nextNumber
-        }
+        os_info: { ...prev.os_info, number: nextNumber }
       }));
     }
   }, []);
@@ -228,47 +240,69 @@ export default function OSForm() {
       }
     };
 
-    // Append to OS List
-    const savedList = localStorage.getItem('os_list');
-    const osList = savedList ? JSON.parse(savedList) : [];
-    
-    // Check if updating existing or adding new
-    const existingIndex = osList.findIndex((os: OSData) => os.os_info.number === updatedData.os_info.number);
-    const isUpdate = existingIndex >= 0;
+    // Persist to PostgreSQL via PostgREST
+    try {
+      // 1. Upsert customer
+      const [techList, sellerList] = await Promise.all([getTechnicians(), getSellers()]);
+      const techId = techList.find(t => t.name === updatedData.screening.technician)?.id ?? null;
+      const sellerId = sellerList.find(s => s.name === updatedData.billing.vendedor)?.id ?? null;
 
-    if (isUpdate) {
-      osList[existingIndex] = updatedData;
-    } else {
-      osList.unshift(updatedData);
-    }
-    localStorage.setItem('os_list', JSON.stringify(osList));
+      const customerRow = await upsertCustomer({
+        name: updatedData.customer.name,
+        cpf_cnpj: updatedData.customer.cpf_cnpj || undefined,
+        email: updatedData.customer.email || undefined,
+        phone: updatedData.customer.contact.main || undefined,
+        wpp_auth: updatedData.customer.contact.wpp_auth,
+        type: updatedData.customer.type,
+        cep: updatedData.customer.address.cep || undefined,
+        address_street: updatedData.customer.address.street || undefined,
+        address_number: updatedData.customer.address.number || undefined,
+        address_comp: updatedData.customer.address.complement || undefined,
+        neighborhood: updatedData.customer.address.neighborhood || undefined,
+        city: updatedData.customer.address.city || undefined,
+        uf: updatedData.customer.address.uf || undefined,
+      });
 
-    // Trigger Webhook if enabled
-    if (settings.webhooks.enabled && settings.webhooks.url) {
-      const shouldTrigger = (isUpdate && settings.webhooks.on_update) || (!isUpdate && settings.webhooks.on_create);
-      
-      if (shouldTrigger) {
-        fetch('/api/webhook-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: settings.webhooks.url,
-            data: {
-              event: isUpdate ? 'os.updated' : 'os.created',
-              timestamp: new Date().toISOString(),
-              data: updatedData
-            }
-          })
-        }).catch(err => console.error('Webhook error:', err));
+      // 2. Upsert service order
+      const row = osDataToRow(updatedData, customerRow.id!, techId, sellerId);
+      await upsertServiceOrder(row);
+
+      // 3. Update local cache for OSList
+      const savedList = localStorage.getItem('os_list');
+      const osList: OSData[] = savedList ? JSON.parse(savedList) : [];
+      const existingIndex = osList.findIndex(os => os.os_info.number === updatedData.os_info.number);
+      const isUpdate = existingIndex >= 0;
+      if (isUpdate) osList[existingIndex] = updatedData; else osList.unshift(updatedData);
+      localStorage.setItem('os_list', JSON.stringify(osList));
+
+      // 4. Webhook
+      if (settings.webhooks.enabled && settings.webhooks.url) {
+        const shouldTrigger = (isUpdate && settings.webhooks.on_update) || (!isUpdate && settings.webhooks.on_create);
+        if (shouldTrigger) {
+          fetch('/api/webhook-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: settings.webhooks.url,
+              data: { event: isUpdate ? 'os.updated' : 'os.created', timestamp: new Date().toISOString(), data: updatedData },
+            }),
+          }).catch(err => console.error('Webhook error:', err));
+        }
       }
+    } catch (err) {
+      console.error('Erro ao salvar OS no banco:', err);
+      // Fallback: save only locally if API is unreachable
+      const savedList = localStorage.getItem('os_list');
+      const osList: OSData[] = savedList ? JSON.parse(savedList) : [];
+      const existingIndex = osList.findIndex(os => os.os_info.number === updatedData.os_info.number);
+      if (existingIndex >= 0) osList[existingIndex] = updatedData; else osList.unshift(updatedData);
+      localStorage.setItem('os_list', JSON.stringify(osList));
     }
-    
-    setTimeout(() => {
-      setIsSyncing(false);
-      setData(updatedData);
-      localStorage.setItem('current_os', JSON.stringify(updatedData));
-      setShowSuccessModal(true);
-    }, 1500);
+
+    setIsSyncing(false);
+    setData(updatedData);
+    localStorage.setItem('current_os', JSON.stringify(updatedData));
+    setShowSuccessModal(true);
   };
 
   const handleWhatsAppShare = () => {

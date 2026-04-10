@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OSData, SettingsData, initialSettingsData } from '../types';
+import { getServiceOrderByNumber, updateCustomer, getSettings } from '../lib/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -41,48 +42,61 @@ export default function OSTracking() {
   });
 
   useEffect(() => {
-    // Load settings for branding
-    const savedSettings = localStorage.getItem('app_settings');
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings);
-      setSettings({
-        ...initialSettingsData,
-        ...parsed,
-        company: { ...initialSettingsData.company, ...parsed.company },
-        webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks }
-      });
-    }
+    // Load settings for branding (API first, localStorage as fallback)
+    getSettings().then(remote => {
+      if (remote.company) {
+        setSettings(prev => ({
+          ...prev,
+          company: { ...initialSettingsData.company, ...(remote.company as any) },
+          webhooks: { ...initialSettingsData.webhooks, ...(remote.webhooks as any) },
+        }));
+      }
+    }).catch(() => {
+      const savedSettings = localStorage.getItem('app_settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(prev => ({
+          ...prev,
+          company: { ...initialSettingsData.company, ...parsed.company },
+          webhooks: { ...initialSettingsData.webhooks, ...parsed.webhooks },
+        }));
+      }
+    });
 
-    // Simulate fetching OS from "backend" (localStorage list)
-    setTimeout(() => {
+    // Fetch OS from PostgreSQL
+    if (!osNumber) { setLoading(false); return; }
+    getServiceOrderByNumber(Number(osNumber)).then(found => {
+      if (found) {
+        setOs(found);
+        const needsReg = !found.customer.cpf_cnpj || !found.customer.email || !found.customer.address.street;
+        setIsRegistering(needsReg);
+        if (needsReg) {
+          setRegData({
+            cpf_cnpj: found.customer.cpf_cnpj || '',
+            email: found.customer.email || '',
+            cep: found.customer.address.cep || '',
+            street: found.customer.address.street || '',
+            number: found.customer.address.number || '',
+            complement: found.customer.address.complement || '',
+            neighborhood: found.customer.address.neighborhood || '',
+            city: found.customer.address.city || '',
+            uf: found.customer.address.uf || '',
+          });
+        }
+      } else {
+        setOs(null);
+      }
+    }).catch(() => {
+      // Fallback to local cache
       const savedList = localStorage.getItem('os_list');
       if (savedList) {
         const osList = JSON.parse(savedList);
         const found = osList.find((item: OSData) => item.os_info.number.toString() === osNumber);
-        if (found) {
-          setOs(found);
-          // Check if registration is needed (missing essential fields)
-          const needsReg = !found.customer.cpf_cnpj || !found.customer.email || !found.customer.address.street;
-          setIsRegistering(needsReg);
-          if (needsReg) {
-            setRegData({
-              cpf_cnpj: found.customer.cpf_cnpj || '',
-              email: found.customer.email || '',
-              cep: found.customer.address.cep || '',
-              street: found.customer.address.street || '',
-              number: found.customer.address.number || '',
-              complement: found.customer.address.complement || '',
-              neighborhood: found.customer.address.neighborhood || '',
-              city: found.customer.address.city || '',
-              uf: found.customer.address.uf || ''
-            });
-          }
-        } else {
-          setOs(null);
-        }
+        setOs(found ?? null);
+      } else {
+        setOs(null);
       }
-      setLoading(false);
-    }, 1000);
+    }).finally(() => setLoading(false));
   }, [osNumber]);
 
   const handleRegSubmit = (e: React.FormEvent) => {
@@ -108,7 +122,22 @@ export default function OSTracking() {
       }
     };
 
-    // Update local storage (simulating DB update)
+    // Persist customer data to PostgreSQL
+    if (updatedOS.customer.id) {
+      updateCustomer(updatedOS.customer.id, {
+        cpf_cnpj: updatedOS.customer.cpf_cnpj || undefined,
+        email: updatedOS.customer.email || undefined,
+        cep: updatedOS.customer.address.cep || undefined,
+        address_street: updatedOS.customer.address.street || undefined,
+        address_number: updatedOS.customer.address.number || undefined,
+        address_comp: updatedOS.customer.address.complement || undefined,
+        neighborhood: updatedOS.customer.address.neighborhood || undefined,
+        city: updatedOS.customer.address.city || undefined,
+        uf: updatedOS.customer.address.uf || undefined,
+      }).catch(err => console.error('Erro ao atualizar cliente:', err));
+    }
+
+    // Update local cache
     const savedList = localStorage.getItem('os_list');
     if (savedList) {
       const osList = JSON.parse(savedList);
