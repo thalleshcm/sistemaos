@@ -247,16 +247,38 @@ export async function getServiceOrderByNumber(osNumber: number): Promise<OSData 
 export async function upsertServiceOrder(row: ServiceOrderRow): Promise<ServiceOrderRow> {
   // balance_value is a GENERATED ALWAYS column — must not be sent
   const { balance_value: _bv, ...payload } = row;
+
+  // Check if OS already exists to decide between INSERT and PATCH
+  const checkRes = await fetch(
+    `${BASE_URL}/service_orders?os_number=eq.${payload.os_number}&select=id`,
+    { headers: getHeaders() }
+  );
+  const existing = await handleResponse<{ id: number }[]>(checkRes, 'upsertServiceOrder:check');
+
+  if (existing.length > 0) {
+    console.debug('[api:upsertServiceOrder] PATCH os_number=', payload.os_number);
+    const res = await fetch(`${BASE_URL}/service_orders?os_number=eq.${payload.os_number}`, {
+      method: 'PATCH',
+      headers: {
+        ...getHeaders() as Record<string, string>,
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(payload),
+    });
+    const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder:patch');
+    return rows[0];
+  }
+
   console.debug('[api:upsertServiceOrder] POST os_number=', payload.os_number, 'customer_id=', payload.customer_id);
   const res = await fetch(`${BASE_URL}/service_orders`, {
     method: 'POST',
     headers: {
       ...getHeaders() as Record<string, string>,
-      Prefer: 'return=representation,resolution=merge-duplicates',
+      Prefer: 'return=representation',
     },
     body: JSON.stringify(payload),
   });
-  const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder');
+  const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder:insert');
   return rows[0];
 }
 
