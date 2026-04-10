@@ -42,7 +42,7 @@ export interface OSData {
     deposit: number;
     balance: number;
   };
-  status: 'AGUARDANDO AUTORIZAC.' | 'AUTORIZADO' | 'PRONTO' | 'ENTREGUE';
+  status: 'AGUARDANDO AUTORIZAC.' | 'AUTORIZADO' | 'PRONTO' | 'ENTREGUE' | 'CANCELADO';
   observations: string;
   images: {
     front: string | null;

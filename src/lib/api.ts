@@ -18,6 +18,17 @@ function getHeaders(jwt?: string | null): HeadersInit {
   return headers;
 }
 
+// Converts "dd/MM/yyyy" (Brazilian format) to "yyyy-MM-dd" (ISO) for PostgreSQL DATE columns.
+// Returns undefined for blank/invalid strings.
+function toISODate(dateStr?: string): string | undefined {
+  if (!dateStr) return undefined;
+  const parts = dateStr.split('/');
+  if (parts.length === 3 && parts[2].length === 4) {
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  return dateStr || undefined; // already ISO or unknown format — pass through
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText);
@@ -81,8 +92,8 @@ export interface ServiceOrderRow {
 export function osDataToRow(os: OSData, customerId: number, technicianId?: number | null, sellerId?: number | null): ServiceOrderRow {
   return {
     os_number: os.os_info.number,
-    date_created: os.os_info.date_created,
-    eta: os.os_info.eta || undefined,
+    date_created: toISODate(os.os_info.date_created),
+    eta: toISODate(os.os_info.eta),
     status: os.status,
     observations: os.observations || undefined,
     product_name: os.product.name,
@@ -167,11 +178,27 @@ export async function getCustomerByCpfOrName(query: string): Promise<CustomerRow
 }
 
 export async function upsertCustomer(customer: CustomerRow): Promise<CustomerRow> {
+  if (customer.id && customer.id > 0) {
+    // Customer already exists — PATCH to update
+    const { id, ...patch } = customer;
+    const res = await fetch(`${BASE_URL}/customers?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: {
+        ...getHeaders() as Record<string, string>,
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(patch),
+    });
+    const rows = await handleResponse<CustomerRow[]>(res);
+    return rows[0] ?? { ...patch, id };
+  }
+
+  // New customer — INSERT
   const res = await fetch(`${BASE_URL}/customers`, {
     method: 'POST',
     headers: {
       ...getHeaders() as Record<string, string>,
-      Prefer: 'return=representation,resolution=merge-duplicates',
+      Prefer: 'return=representation',
     },
     body: JSON.stringify(customer),
   });

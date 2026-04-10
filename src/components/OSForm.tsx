@@ -46,6 +46,7 @@ export default function OSForm() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const webcamRef = useRef<Webcam>(null);
 
   const isFieldVisible = (id: string) => {
@@ -223,6 +224,7 @@ export default function OSForm() {
   const handleSave = async () => {
     if (!validate()) return;
 
+    setSaveError(null);
     setIsSyncing(true);
     
     // Ensure we have a valid number before saving
@@ -248,6 +250,7 @@ export default function OSForm() {
       const sellerId = sellerList.find(s => s.name === updatedData.billing.vendedor)?.id ?? null;
 
       const customerRow = await upsertCustomer({
+        id: updatedData.customer.id > 0 ? updatedData.customer.id : undefined,
         name: updatedData.customer.name,
         cpf_cnpj: updatedData.customer.cpf_cnpj || undefined,
         email: updatedData.customer.email || undefined,
@@ -291,12 +294,8 @@ export default function OSForm() {
       }
     } catch (err) {
       console.error('Erro ao salvar OS no banco:', err);
-      // Fallback: save only locally if API is unreachable
-      const savedList = localStorage.getItem('os_list');
-      const osList: OSData[] = savedList ? JSON.parse(savedList) : [];
-      const existingIndex = osList.findIndex(os => os.os_info.number === updatedData.os_info.number);
-      if (existingIndex >= 0) osList[existingIndex] = updatedData; else osList.unshift(updatedData);
-      localStorage.setItem('os_list', JSON.stringify(osList));
+      const message = err instanceof Error ? err.message : String(err);
+      setSaveError(`Erro ao salvar: ${message}`);
     }
 
     setIsSyncing(false);
@@ -415,6 +414,13 @@ export default function OSForm() {
           <ActionButton icon={<LogOut size={18} />} label="Fechar" shortcut="Ctrl+X" onClick={() => navigate('/')} />
         </nav>
       </header>
+
+      {saveError && (
+        <div className="mb-4 bg-error/10 border border-error/20 p-3 rounded-xl flex items-center gap-3 text-error text-[10px] font-black uppercase tracking-widest">
+          <AlertCircle size={16} />
+          {saveError}
+        </div>
+      )}
 
       <main className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Left Column */}
