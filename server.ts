@@ -35,20 +35,37 @@ async function startServer() {
     }
 
     try {
-      const result = await pool.query(
-        `SELECT id, name, email, level
-           FROM users
-          WHERE (lower(email) = lower($1) OR lower(name) = lower($1))
-            AND password_hash = crypt($2, password_hash)
-          LIMIT 1`,
-        [identifier, password]
-      );
+      console.log("[auth] Login attempt:", { identifier });
 
-      if (result.rowCount === 0) {
+      // Step 1: find user by email or name (case-insensitive)
+      const lookup = await pool.query(
+        `SELECT id, name, email, level, password_hash
+           FROM users
+          WHERE lower(email) = lower($1) OR lower(name) = lower($1)
+          LIMIT 1`,
+        [identifier]
+      );
+      console.log("[auth] User lookup rows:", lookup.rowCount, lookup.rows[0] ? { id: lookup.rows[0].id, email: lookup.rows[0].email } : null);
+
+      if (lookup.rowCount === 0) {
         return res.status(401).json({ error: "Usuário ou senha incorretos." });
       }
 
-      const user = result.rows[0] as { id: number; name: string; email: string; level: string };
+      // Step 2: verify password with crypt()
+      const pwCheck = await pool.query(
+        `SELECT id FROM users WHERE id = $1 AND password_hash = crypt($2, password_hash)`,
+        [lookup.rows[0].id, password]
+      );
+      console.log("[auth] Password check rows:", pwCheck.rowCount);
+
+      if (pwCheck.rowCount === 0) {
+        return res.status(401).json({ error: "Usuário ou senha incorretos." });
+      }
+
+      const result = lookup;
+      const user = result.rows[0] as { id: number; name: string; email: string; level: string; password_hash: string };
+      // Remove hash from response
+      const { password_hash: _ph, ...safeUser } = user;
 
       // Update last_access
       pool.query("UPDATE users SET last_access = NOW() WHERE id = $1", [user.id]).catch(() => {});
@@ -59,7 +76,7 @@ async function startServer() {
       console.log("[auth] JWT payload:", payload);
       console.log("[auth] JWT secret (first 8 chars):", JWT_SECRET.substring(0, 8));
 
-      return res.json({ token, user });
+      return res.json({ token, user: safeUser });
     } catch (err) {
       console.error("Login error:", err);
       return res.status(500).json({ error: "Erro interno ao processar login." });

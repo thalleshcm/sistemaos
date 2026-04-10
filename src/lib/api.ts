@@ -37,9 +37,11 @@ async function handleResponse<T>(res: Response, label?: string): Promise<T> {
     throw new Error(`API ${res.status}: ${body}`);
   }
   console.debug(`${tag} ${res.status} ${res.url}`);
-  // 204 No Content
+  // 204 No Content or empty body (e.g. return=minimal)
   if (res.status === 204) return undefined as unknown as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return undefined as unknown as T;
+  return JSON.parse(text) as T;
 }
 
 // ---------------------------------------------------------------------------
