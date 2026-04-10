@@ -808,7 +808,7 @@ export default function OSForm() {
             <div className="space-y-3 pt-4 border-t border-white/20 relative z-10">
               <p className="text-[9px] font-black uppercase tracking-widest opacity-80">Status</p>
               <div className="grid grid-cols-2 gap-2">
-                {["AGUARDA AUTORIZ.", "AUTORIZADO", "PRONTO", "ENTREGUE"].map(s => (
+                {["AGUARDANDO AUTORIZAC.", "AUTORIZADO", "PRONTO", "ENTREGUE"].map(s => (
                   <label key={s} className="flex items-center gap-2 cursor-pointer group">
                     <div 
                       onClick={() => setData(prev => ({ ...prev, status: s as any }))}

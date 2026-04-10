@@ -176,7 +176,7 @@ export default function OSSearch() {
                 onChange={(e) => handleSearch(searchTerm, e.target.value, filterSeller, filterDateStart, filterDateEnd)}
               >
                 <option value="TODOS">Todos os Status</option>
-                <option value="AGUARDA AUTORIZ.">Aguardando Autorização</option>
+                <option value="AGUARDANDO AUTORIZAC.">Aguardando Autorização</option>
                 <option value="AUTORIZADO">Autorizado</option>
                 <option value="PRONTO">Pronto</option>
                 <option value="ENTREGUE">Entregue</option>
