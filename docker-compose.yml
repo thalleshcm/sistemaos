@@ -30,6 +30,17 @@ services:
     networks:
       - con_network
 
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - con_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   pgadmin:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
