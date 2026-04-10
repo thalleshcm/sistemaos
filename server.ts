@@ -16,7 +16,7 @@ const pool = new Pool({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "change_me_in_development";
-const JWT_EXPIRES_IN = "8h";
+const JWT_EXPIRES_IN = "7d";
 
 async function startServer() {
   const app = express();
@@ -53,16 +53,28 @@ async function startServer() {
       // Update last_access
       pool.query("UPDATE users SET last_access = NOW() WHERE id = $1", [user.id]).catch(() => {});
 
-      const token = jwt.sign(
-        { role: "app_user", user_id: user.id, level: user.level },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      );
+      const payload = { role: "app_user", user_id: user.id, level: user.level };
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+      console.log("[auth] JWT payload:", payload);
+      console.log("[auth] JWT secret (first 8 chars):", JWT_SECRET.substring(0, 8));
 
       return res.json({ token, user });
     } catch (err) {
       console.error("Login error:", err);
       return res.status(500).json({ error: "Erro interno ao processar login." });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // DB Test: GET /api/test-db
+  // ---------------------------------------------------------------------------
+  app.get("/api/test-db", async (_req, res) => {
+    try {
+      const result = await pool.query("SELECT current_user, current_database()");
+      res.json(result.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
