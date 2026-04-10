@@ -51,4 +51,4 @@ volumes:
 networks:
   con_network:
     external: true
-    name: ${CON_NETWORK}
+    name: coolify
