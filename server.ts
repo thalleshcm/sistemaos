@@ -133,6 +133,78 @@ async function startServer() {
   });
 
   // ---------------------------------------------------------------------------
+  // Public OS Status: GET /api/public/os/:uuid
+  // ---------------------------------------------------------------------------
+  app.get("/api/public/os/:uuid", async (req, res) => {
+    try {
+      const { uuid } = req.params;
+      
+      const query = `
+        SELECT 
+          so.os_number, so.date_created, so.eta, so.status, so.observations,
+          so.product_name, so.product_service, so.product_type, so.product_delivery,
+          so.damages, so.other_damages,
+          so.img_front, so.img_back,
+          c.name as customer_name, c.email as customer_email, c.cpf_cnpj as customer_cpf_cnpj,
+          c.cep as customer_cep, c.address_street as customer_street, c.address_number as customer_number,
+          c.address_comp as customer_comp, c.neighborhood as customer_neighborhood,
+          c.city as customer_city, c.uf as customer_uf
+        FROM service_orders so
+        JOIN customers c ON so.customer_id = c.id
+        WHERE so.uuid = $1 OR so.os_number::text = $1
+      `;
+      
+      const result = await pool.query(query, [uuid]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: "OS não encontrada." });
+      }
+      
+      const row = result.rows[0];
+      
+      // Removendo dados financeiros (total_value, deposit_value, balance_value) intencionalmente
+      const publicData = {
+        os_info: {
+          number: row.os_number,
+          date_created: row.date_created,
+          eta: row.eta,
+          synced: true
+        },
+        product: {
+          name: row.product_name,
+          service: row.product_service,
+          type: row.product_type,
+          delivery: row.product_delivery
+        },
+        customer: {
+          name: row.customer_name,
+          email: row.customer_email,
+          cpf_cnpj: row.customer_cpf_cnpj,
+          address: {
+            cep: row.customer_cep,
+            street: row.customer_street,
+            number: row.customer_number,
+            complement: row.customer_comp,
+            neighborhood: row.customer_neighborhood,
+            city: row.customer_city,
+            uf: row.customer_uf
+          }
+        },
+        status: row.status,
+        images: {
+          front: row.img_front,
+          back: row.img_back
+        }
+      };
+      
+      return res.json(publicData);
+    } catch (err) {
+      console.error("Public OS fetch error:", err);
+      return res.status(500).json({ error: "Erro ao buscar a OS." });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // User CRUD: /api/users
   // ---------------------------------------------------------------------------
   // GET /api/users — lista usuários

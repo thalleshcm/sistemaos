@@ -91,7 +91,7 @@ export const initialOSData: OSData = {
     deposit: 0,
     balance: 0
   },
-  status: "AGUARDANDO AUTORIZAC.",
+  status: "AUTORIZADO",
   observations: "",
   images: {
     front: null,

@@ -23,7 +23,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export default function OSTracking() {
-  const { osNumber } = useParams();
+  const { osNumber, id } = useParams();
+  const trackingId = id || osNumber;
   const navigate = useNavigate();
   const [os, setOs] = useState<OSData | null>(null);
   const [settings, setSettings] = useState<SettingsData>(initialSettingsData);
@@ -64,8 +65,39 @@ export default function OSTracking() {
     });
 
     // Fetch OS from PostgreSQL
-    if (!osNumber) { setLoading(false); return; }
-    getServiceOrderByNumber(Number(osNumber)).then(found => {
+    if (!trackingId) { setLoading(false); return; }
+    
+    // Se for pelo link público com ID/UUID, buscar do Express
+    if (id) {
+      fetch(`/api/public/os/${id}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(found => {
+          if (found) {
+            setOs(found);
+            const needsReg = !found.customer.cpf_cnpj || !found.customer.email || !found.customer.address.street;
+            setIsRegistering(needsReg);
+            if (needsReg) {
+              setRegData({
+                cpf_cnpj: found.customer.cpf_cnpj || '',
+                email: found.customer.email || '',
+                cep: found.customer.address.cep || '',
+                street: found.customer.address.street || '',
+                number: found.customer.address.number || '',
+                complement: found.customer.address.complement || '',
+                neighborhood: found.customer.address.neighborhood || '',
+                city: found.customer.address.city || '',
+                uf: found.customer.address.uf || '',
+              });
+            }
+          } else {
+            setOs(null);
+          }
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    getServiceOrderByNumber(Number(trackingId)).then(found => {
       if (found) {
         setOs(found);
         const needsReg = !found.customer.cpf_cnpj || !found.customer.email || !found.customer.address.street;
@@ -91,13 +123,13 @@ export default function OSTracking() {
       const savedList = localStorage.getItem('os_list');
       if (savedList) {
         const osList = JSON.parse(savedList);
-        const found = osList.find((item: OSData) => item.os_info.number.toString() === osNumber);
+        const found = osList.find((item: OSData) => item.os_info.number.toString() === trackingId);
         setOs(found ?? null);
       } else {
         setOs(null);
       }
     }).finally(() => setLoading(false));
-  }, [osNumber]);
+  }, [trackingId, id]);
 
   const handleRegSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,7 +238,7 @@ export default function OSTracking() {
           <AlertCircle size={40} />
         </div>
         <h2 className="text-2xl font-black mb-2">OS não encontrada</h2>
-        <p className="text-gray-500 mb-8 max-w-xs">Não conseguimos localizar uma Ordem de Serviço com o número #{osNumber}. Verifique o número e tente novamente.</p>
+        <p className="text-gray-500 mb-8 max-w-xs">Não conseguimos localizar uma Ordem de Serviço com o identificador #{trackingId}. Verifique o link e tente novamente.</p>
         <button 
           onClick={() => navigate('/')}
           className="px-8 py-4 bg-brand text-white rounded-2xl font-black text-sm shadow-xl shadow-brand/20"
@@ -415,6 +447,25 @@ export default function OSTracking() {
                 </div>
               </section>
             </div>
+
+            {/* Product Photos */}
+            {(os.images?.front || os.images?.back) && (
+              <section className="bg-bg-card rounded-3xl p-6 border border-border-soft shadow-xl mt-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4">Fotos do Produto</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {os.images.front && (
+                    <div className="rounded-xl overflow-hidden border border-border-soft aspect-video">
+                      <img src={os.images.front} alt="Frente" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  {os.images.back && (
+                    <div className="rounded-xl overflow-hidden border border-border-soft aspect-video">
+                      <img src={os.images.back} alt="Fundo" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Footer Action */}
             <div className="pt-8 text-center">

@@ -19,6 +19,7 @@ export default function App() {
           <Route path="/print" element={<OSPrintView />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/track/:osNumber" element={<OSTracking />} />
+          <Route path="/status/:id" element={<OSTracking />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

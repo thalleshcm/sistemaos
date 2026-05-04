@@ -624,7 +624,7 @@ export default function OSForm() {
                     <div className="space-y-4">
                       <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Forma Entrega</p>
                       <div className="flex flex-col gap-3">
-                        {["Na Loja", "Motoboy"].map(delivery => (
+                        {["Na Loja", "Motoboy", "Correios"].map(delivery => (
                           <RadioButton 
                             key={delivery} 
                             label={delivery} 

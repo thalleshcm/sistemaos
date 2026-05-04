@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS service_orders (
   os_number        INT             NOT NULL UNIQUE,
   date_created     DATE            NOT NULL DEFAULT CURRENT_DATE,
   eta              DATE,
-  status           os_status       NOT NULL DEFAULT 'AGUARDANDO AUTORIZAC.',
+  status           os_status       NOT NULL DEFAULT 'AUTORIZADO',
+  uuid             UUID            NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   observations     TEXT,
   -- Produto
   product_name     VARCHAR(200)    NOT NULL DEFAULT '',
@@ -172,6 +173,21 @@ CREATE TRIGGER trg_customers_updated_at
 CREATE TRIGGER trg_service_orders_updated_at
   BEFORE UPDATE ON service_orders
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- =============================================================================
+-- TRIGGER: forçar status 'AUTORIZADO' no momento do INSERT
+-- =============================================================================
+CREATE OR REPLACE FUNCTION force_os_status_autorizado()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.status = 'AUTORIZADO';
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_force_os_status_autorizado
+  BEFORE INSERT ON service_orders
+  FOR EACH ROW EXECUTE FUNCTION force_os_status_autorizado();
 
 -- =============================================================================
 -- TRIGGER: registra histórico automaticamente ao mudar status
