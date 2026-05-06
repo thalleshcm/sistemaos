@@ -22,7 +22,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "change_me_in_development";
+const JWT_SECRET = process.env.JWT_SECRET as string;
+if (!JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is missing.");
+  process.exit(1);
+}
 const JWT_EXPIRES_IN = "7d";
 
 async function startServer() {

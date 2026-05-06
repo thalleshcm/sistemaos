@@ -17,3 +17,5 @@ services:
         sync: false
       - key: PORT
         value: 3000
+      - key: JWT_SECRET
+        sync: false
