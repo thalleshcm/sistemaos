@@ -1,8 +1,6 @@
 import { OSData, SettingsData } from '../types';
 import { API_BASE_URL } from '../config/api';
 
-const BASE_URL = 'https://api-db.thalleshcm.com.br';
-
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
@@ -175,11 +173,7 @@ export function osDataFromRow(
 // ---------------------------------------------------------------------------
 
 export async function getCustomerByCpfOrName(query: string): Promise<CustomerRow[]> {
-  const params = new URLSearchParams({
-    or: `(cpf_cnpj.ilike.*${query}*,name.ilike.*${query}*)`,
-    limit: '10',
-  });
-  const res = await fetch(`${BASE_URL}/customers?${params}`, { headers: getHeaders() });
+  const res = await fetch(`${API_BASE_URL}/api/customers/search?q=${encodeURIComponent(query)}`, { headers: getHeaders() });
   return handleResponse<CustomerRow[]>(res);
 }
 
@@ -188,36 +182,28 @@ export async function upsertCustomer(customer: CustomerRow): Promise<CustomerRow
     // Customer already exists — PATCH to update
     const { id, ...patch } = customer;
     console.debug(`[api:upsertCustomer] PATCH id=${id}`, patch);
-    const res = await fetch(`${BASE_URL}/customers?id=eq.${id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/customers/${id}`, {
       method: 'PATCH',
-      headers: {
-        ...getHeaders() as Record<string, string>,
-        Prefer: 'return=representation',
-      },
+      headers: getHeaders(),
       body: JSON.stringify(patch),
     });
-    const rows = await handleResponse<CustomerRow[]>(res, 'upsertCustomer');
-    return rows[0] ?? { ...patch, id };
+    return handleResponse<CustomerRow>(res, 'upsertCustomer');
   }
 
   // New customer — INSERT
   console.debug('[api:upsertCustomer] POST new customer', customer.name);
-  const res = await fetch(`${BASE_URL}/customers`, {
+  const res = await fetch(`${API_BASE_URL}/api/customers`, {
     method: 'POST',
-    headers: {
-      ...getHeaders() as Record<string, string>,
-      Prefer: 'return=representation',
-    },
+    headers: getHeaders(),
     body: JSON.stringify(customer),
   });
-  const rows = await handleResponse<CustomerRow[]>(res, 'upsertCustomer');
-  return rows[0];
+  return handleResponse<CustomerRow>(res, 'upsertCustomer');
 }
 
 export async function updateCustomer(id: number, patch: Partial<CustomerRow>): Promise<void> {
-  const res = await fetch(`${BASE_URL}/customers?id=eq.${id}`, {
+  const res = await fetch(`${API_BASE_URL}/api/customers/${id}`, {
     method: 'PATCH',
-    headers: { ...getHeaders() as Record<string, string>, Prefer: 'return=minimal' },
+    headers: getHeaders(),
     body: JSON.stringify(patch),
   });
   return handleResponse<void>(res);
@@ -238,11 +224,9 @@ export async function uploadImage(base64Image: string): Promise<string> {
   return data.url;
 }
 
-const OS_SELECT = 'select=*,customers(*),technicians(name),sellers(name)';
-
 export async function getServiceOrders(limit = 50): Promise<OSData[]> {
   const res = await fetch(
-    `${BASE_URL}/service_orders?${OS_SELECT}&order=date_created.desc,os_number.desc&limit=${limit}`,
+    `${API_BASE_URL}/api/os?limit=${limit}`,
     { headers: getHeaders() }
   );
   const rows = await handleResponse<(ServiceOrderRow & { customers: CustomerRow; technicians: { name: string } | null; sellers: { name: string } | null })[]>(res);
@@ -251,55 +235,33 @@ export async function getServiceOrders(limit = 50): Promise<OSData[]> {
 
 export async function getServiceOrderByNumber(osNumber: number): Promise<OSData | null> {
   const res = await fetch(
-    `${BASE_URL}/service_orders?os_number=eq.${osNumber}&${OS_SELECT}&limit=1`,
+    `${API_BASE_URL}/api/os/${osNumber}`,
     { headers: getHeaders() }
   );
-  const rows = await handleResponse<(ServiceOrderRow & { customers: CustomerRow; technicians: { name: string } | null; sellers: { name: string } | null })[]>(res);
-  return rows.length ? osDataFromRow(rows[0]) : null;
+  const row = await handleResponse<(ServiceOrderRow & { customers: CustomerRow; technicians: { name: string } | null; sellers: { name: string } | null }) | null>(res);
+  return row ? osDataFromRow(row) : null;
 }
 
 export async function upsertServiceOrder(row: ServiceOrderRow): Promise<ServiceOrderRow> {
-  // balance_value is a GENERATED ALWAYS column — must not be sent
   const { balance_value: _bv, ...payload } = row;
 
-  // Check if OS already exists to decide between INSERT and PATCH
-  const checkRes = await fetch(
-    `${BASE_URL}/service_orders?os_number=eq.${payload.os_number}&select=id`,
-    { headers: getHeaders() }
-  );
-  const existing = await handleResponse<{ id: number }[]>(checkRes, 'upsertServiceOrder:check');
-
-  if (existing.length > 0) {
-    console.debug('[api:upsertServiceOrder] PATCH os_number=', payload.os_number);
-    const res = await fetch(`${BASE_URL}/service_orders?os_number=eq.${payload.os_number}`, {
-      method: 'PATCH',
-      headers: {
-        ...getHeaders() as Record<string, string>,
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify(payload),
-    });
-    const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder:patch');
-    return rows[0];
-  }
-
-  console.debug('[api:upsertServiceOrder] POST os_number=', payload.os_number, 'customer_id=', payload.customer_id);
-  const res = await fetch(`${BASE_URL}/service_orders`, {
+  // Verify if it already exists by attempting to fetch it (or let backend decide via POST/PUT)
+  // Let's use PUT /api/os/:os_number to update, or POST /api/os to create.
+  // We can do a check first or let the backend handle upsert logic.
+  // Since we already have the endpoint, let's try GET first or just POST and handle conflict in backend.
+  // Actually, we can just POST /api/os. If it exists, backend updates.
+  const res = await fetch(`${API_BASE_URL}/api/os`, {
     method: 'POST',
-    headers: {
-      ...getHeaders() as Record<string, string>,
-      Prefer: 'return=representation',
-    },
+    headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  const rows = await handleResponse<ServiceOrderRow[]>(res, 'upsertServiceOrder:insert');
-  return rows[0];
+  return handleResponse<ServiceOrderRow>(res, 'upsertServiceOrder');
 }
 
 export async function updateServiceOrderStatus(osNumber: number, status: OSData['status']): Promise<void> {
-  const res = await fetch(`${BASE_URL}/service_orders?os_number=eq.${osNumber}`, {
+  const res = await fetch(`${API_BASE_URL}/api/os/${osNumber}/status`, {
     method: 'PATCH',
-    headers: { ...getHeaders() as Record<string, string>, Prefer: 'return=minimal' },
+    headers: getHeaders(),
     body: JSON.stringify({ status }),
   });
   return handleResponse<void>(res);
@@ -315,12 +277,12 @@ export async function updateServiceOrderCustomer(osNumber: number, customerPatch
 // ---------------------------------------------------------------------------
 
 export async function getTechnicians(): Promise<{ id: number; name: string }[]> {
-  const res = await fetch(`${BASE_URL}/technicians?active=eq.true&select=id,name`, { headers: getHeaders() });
+  const res = await fetch(`${API_BASE_URL}/api/technicians`, { headers: getHeaders() });
   return handleResponse(res, 'getTechnicians');
 }
 
 export async function getSellers(): Promise<{ id: number; name: string }[]> {
-  const res = await fetch(`${BASE_URL}/sellers?active=eq.true&select=id,name`, { headers: getHeaders() });
+  const res = await fetch(`${API_BASE_URL}/api/sellers`, { headers: getHeaders() });
   return handleResponse(res, 'getSellers');
 }
 
@@ -329,19 +291,16 @@ export async function getSellers(): Promise<{ id: number; name: string }[]> {
 // ---------------------------------------------------------------------------
 
 export async function getSettings(): Promise<Partial<SettingsData>> {
-  const res = await fetch(`${BASE_URL}/system_settings?key=in.(company,workflow,webhooks)`, { headers: getHeaders() });
-  const rows = await handleResponse<{ key: string; value: unknown }[]>(res);
-  return rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as Partial<SettingsData>);
+  const res = await fetch(`${API_BASE_URL}/api/settings`, { headers: getHeaders() });
+  const data = await handleResponse<Partial<SettingsData>>(res);
+  return data;
 }
 
 export async function upsertSetting(key: string, value: unknown): Promise<void> {
   console.debug(`[api:upsertSetting] key=${key}`);
-  const res = await fetch(`${BASE_URL}/system_settings`, {
+  const res = await fetch(`${API_BASE_URL}/api/settings`, {
     method: 'POST',
-    headers: {
-      ...getHeaders() as Record<string, string>,
-      Prefer: 'return=minimal,resolution=merge-duplicates',
-    },
+    headers: getHeaders(),
     body: JSON.stringify({ key, value }),
   });
   return handleResponse<void>(res, 'upsertSetting');
@@ -352,17 +311,8 @@ export async function upsertSetting(key: string, value: unknown): Promise<void> 
 // ---------------------------------------------------------------------------
 
 export async function searchServiceOrders(term: string, limit = 30): Promise<OSData[]> {
-  const isNumber = /^\d+$/.test(term.trim());
-  let filterParam: string;
-
-  if (isNumber) {
-    filterParam = `os_number=eq.${term}`;
-  } else {
-    filterParam = `customers.name=ilike.*${encodeURIComponent(term)}*`;
-  }
-
   const res = await fetch(
-    `${BASE_URL}/service_orders?${filterParam}&${OS_SELECT}&order=date_created.desc&limit=${limit}`,
+    `${API_BASE_URL}/api/os/search?q=${encodeURIComponent(term)}&limit=${limit}`,
     { headers: getHeaders() }
   );
   const rows = await handleResponse<(ServiceOrderRow & { customers: CustomerRow; technicians: { name: string } | null; sellers: { name: string } | null })[]>(res);
