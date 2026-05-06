@@ -31,6 +31,7 @@ import { twMerge } from 'tailwind-merge';
 import { SettingsData, initialSettingsData } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { getSettings, upsertSetting } from '../lib/api';
+import { API_BASE_URL } from '../config/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -886,7 +887,7 @@ function WebhookSettings({ data, setSettings }: {
     if (!data.url) return;
     setTestStatus('loading');
     try {
-      const response = await fetch('/api/webhook-proxy', {
+      const response = await fetch(`${API_BASE_URL}/api/webhook-proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
