@@ -1,5 +1,6 @@
 // Auth helpers – JWT é gerado pelo server.ts (/api/auth/login)
 // O token é armazenado em sessionStorage e enviado pelo api.ts em cada request.
+import { API_BASE_URL } from '../config/api';
 
 export interface AuthUser {
   id: number;
@@ -14,7 +15,7 @@ export interface LoginResponse {
 }
 
 export async function loginWithCredentials(identifier: string, password: string): Promise<LoginResponse> {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identifier, password }),

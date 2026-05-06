@@ -26,8 +26,9 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import Webcam from 'react-webcam';
 import { OSData, initialOSData, SettingsData, initialSettingsData } from '../types';
-import { getSettings, getTechnicians, getSellers, upsertCustomer, upsertServiceOrder, osDataToRow } from '../lib/api';
+import { getSettings, getTechnicians, getSellers, upsertCustomer, upsertServiceOrder, osDataToRow, uploadImage } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -266,6 +267,14 @@ export default function OSForm() {
         uf: updatedData.customer.address.uf || undefined,
       });
 
+      // Upload images if they are base64
+      if (updatedData.images.front && updatedData.images.front.startsWith('data:image')) {
+        updatedData.images.front = await uploadImage(updatedData.images.front);
+      }
+      if (updatedData.images.back && updatedData.images.back.startsWith('data:image')) {
+        updatedData.images.back = await uploadImage(updatedData.images.back);
+      }
+
       // 2. Upsert service order
       const row = osDataToRow(updatedData, customerRow.id!, techId, sellerId);
       await upsertServiceOrder(row);
@@ -282,7 +291,7 @@ export default function OSForm() {
       if (settings.webhooks.enabled && settings.webhooks.url) {
         const shouldTrigger = (isUpdate && settings.webhooks.on_update) || (!isUpdate && settings.webhooks.on_create);
         if (shouldTrigger) {
-          fetch('/api/webhook-proxy', {
+          fetch(`${API_BASE_URL}/api/webhook-proxy`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

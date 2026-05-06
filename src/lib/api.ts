@@ -1,4 +1,5 @@
 import { OSData, SettingsData } from '../types';
+import { API_BASE_URL } from '../config/api';
 
 const BASE_URL = 'https://api-db.thalleshcm.com.br';
 
@@ -225,6 +226,17 @@ export async function updateCustomer(id: number, patch: Partial<CustomerRow>): P
 // ---------------------------------------------------------------------------
 // Service Orders
 // ---------------------------------------------------------------------------
+
+export async function uploadImage(base64Image: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64Image }),
+  });
+  if (!res.ok) throw new Error('Failed to upload image');
+  const data = await res.json();
+  return data.url;
+}
 
 const OS_SELECT = 'select=*,customers(*),technicians(name),sellers(name)';
 

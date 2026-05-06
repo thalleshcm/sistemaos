@@ -4,15 +4,22 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
 import jwt from "jsonwebtoken";
+import { v2 as cloudinary } from "cloudinary";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: false,
+  ssl: { rejectUnauthorized: false },
 });
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "change_me_in_development";
@@ -20,7 +27,7 @@ const JWT_EXPIRES_IN = "7d";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(express.json({ limit: "10mb" }));
 
@@ -108,6 +115,25 @@ async function startServer() {
   });
 
   // ---------------------------------------------------------------------------
+  // Photo Upload: POST /api/upload
+  // ---------------------------------------------------------------------------
+  app.post("/api/upload", async (req, res) => {
+    try {
+      const { image } = req.body as { image?: string };
+      if (!image) return res.status(400).json({ error: "Image is required" });
+
+      const result = await cloudinary.uploader.upload(image, {
+        folder: "sistema-os",
+      });
+
+      res.json({ url: result.secure_url });
+    } catch (err) {
+      console.error("Upload error:", err);
+      res.status(500).json({ error: "Failed to upload image" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // Webhook Proxy: POST /api/webhook-proxy — fire-and-forget, always 202
   // ---------------------------------------------------------------------------
   app.post("/api/webhook-proxy", (req, res) => {
@@ -139,30 +165,34 @@ async function startServer() {
     try {
       const { uuid } = req.params;
       
-      const query = `
-        SELECT 
-          so.os_number, so.date_created, so.eta, so.status, so.observations,
-          so.product_name, so.product_service, so.product_type, so.product_delivery,
-          so.damages, so.other_damages,
-          so.img_front, so.img_back,
-          c.name as customer_name, c.email as customer_email, c.cpf_cnpj as customer_cpf_cnpj,
-          c.cep as customer_cep, c.address_street as customer_street, c.address_number as customer_number,
-          c.address_comp as customer_comp, c.neighborhood as customer_neighborhood,
-          c.city as customer_city, c.uf as customer_uf
-        FROM service_orders so
-        JOIN customers c ON so.customer_id = c.id
-        WHERE so.uuid = $1 OR so.os_number::text = $1
-      `;
+      const isNumber = /^\d+$/.test(uuid);
+      const filterParam = isNumber ? `os_number=eq.${uuid}` : `uuid=eq.${uuid}`;
       
-      const result = await pool.query(query, [uuid]);
+      // Fetch directly from PostgREST to avoid direct PostgreSQL connection dependency locally
+      const response = await fetch(
+        `https://api-db.thalleshcm.com.br/service_orders?${filterParam}&select=os_number,date_created,eta,status,observations,product_name,product_service,product_type,product_delivery,damages,other_damages,img_front,img_back,customers(name,email,cpf_cnpj,cep,address_street,address_number,address_comp,neighborhood,city,uf)`,
+        {
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`PostgREST error: ${response.status}`);
+      }
+
+      const rows = await response.json();
       
-      if (result.rowCount === 0) {
+      if (!rows || rows.length === 0) {
         return res.status(404).json({ error: "OS não encontrada." });
       }
       
-      const row = result.rows[0];
+      const row = rows[0];
+      const c = row.customers;
       
-      // Removendo dados financeiros (total_value, deposit_value, balance_value) intencionalmente
+      // Removendo dados financeiros intencionalmente
       const publicData = {
         os_info: {
           number: row.os_number,
@@ -177,17 +207,17 @@ async function startServer() {
           delivery: row.product_delivery
         },
         customer: {
-          name: row.customer_name,
-          email: row.customer_email,
-          cpf_cnpj: row.customer_cpf_cnpj,
+          name: c?.name || "",
+          email: c?.email || "",
+          cpf_cnpj: c?.cpf_cnpj || "",
           address: {
-            cep: row.customer_cep,
-            street: row.customer_street,
-            number: row.customer_number,
-            complement: row.customer_comp,
-            neighborhood: row.customer_neighborhood,
-            city: row.customer_city,
-            uf: row.customer_uf
+            cep: c?.cep || "",
+            street: c?.address_street || "",
+            number: c?.address_number || "",
+            complement: c?.address_comp || "",
+            neighborhood: c?.neighborhood || "",
+            city: c?.city || "",
+            uf: c?.uf || ""
           }
         },
         status: row.status,
@@ -254,10 +284,11 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    // If running from root via tsx, __dirname is root. If running from build, it might be different.
+    // Using process.cwd() is generally safer, but let's stick to the path.join convention requested.
+    app.use(express.static(path.join(__dirname, 'dist')));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
 

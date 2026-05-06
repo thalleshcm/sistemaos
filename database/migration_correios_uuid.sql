@@ -13,7 +13,9 @@ ALTER TABLE service_orders ALTER COLUMN uuid SET NOT NULL;
 CREATE OR REPLACE FUNCTION force_os_status_autorizado()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  NEW.status = 'AUTORIZADO';
+  IF NEW.status IS NULL OR NEW.status = '' THEN
+    NEW.status = 'AUTORIZADO';
+  END IF;
   RETURN NEW;
 END;
 $$;

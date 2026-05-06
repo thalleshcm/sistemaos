@@ -15,6 +15,7 @@ import {
 import { motion } from 'motion/react';
 import { OSData, SettingsData, initialSettingsData } from '../types';
 import { getServiceOrderByNumber, updateCustomer, getSettings } from '../lib/api';
+import { API_BASE_URL } from '../config/api';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -69,7 +70,7 @@ export default function OSTracking() {
     
     // Se for pelo link público com ID/UUID, buscar do Express
     if (id) {
-      fetch(`/api/public/os/${id}`)
+      fetch(`${API_BASE_URL}/api/public/os/${id}`)
         .then(res => res.ok ? res.json() : null)
         .then(found => {
           if (found) {
@@ -185,7 +186,7 @@ export default function OSTracking() {
 
     // Trigger Webhook if enabled
     if (settings.webhooks.enabled && settings.webhooks.url && settings.webhooks.on_update) {
-      fetch('/api/webhook-proxy', {
+      fetch(`${API_BASE_URL}/api/webhook-proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
